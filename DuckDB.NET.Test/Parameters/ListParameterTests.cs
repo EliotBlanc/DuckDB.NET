@@ -245,4 +245,54 @@ public class ListParameterTests(DuckDBDatabaseFixture db) : DuckDBTestBase(db)
             actualGuid.Should().Be(guid);
         }
     }
+
+    [Fact]
+    public void CanUseIn()
+    {
+        Command.CommandText =
+        """
+        CREATE OR REPLACE TABLE InQueryTest (
+            a int,
+            b varchar
+        );
+        
+        INSERT INTO InQueryTest (a, b)
+        VALUES (3, 'Reginald'),
+        (6, 'Gregory'),
+        (7, 'Albert'); 
+        """;
+        Command.ExecuteNonQuery();
+
+        var ids = new List<int>
+        {
+            3,
+            7
+        };
+        var names = new List<string>
+        {
+            "Reginald",
+            "Albert"
+        };
+
+        Command.CommandText = "SELECT * FROM InQueryTest WHERE b in $names ORDER BY a;";
+        Command.Parameters.Add(new DuckDBParameter("names", names));
+
+        using var reader = Command.ExecuteReader();
+
+        for (var i = 0; i < names.Count; i++)
+        {
+            var name = names[i];
+            var id = ids[i];
+            reader.Read();
+
+            var actualId = reader.GetFieldValue<int>(0);
+            var actualName = reader.GetFieldValue<string>(1);
+
+            actualId.Should().Be(id);
+            actualName.Should().Be(name);
+        }
+
+        Command.CommandText = "DROP TABLE InQueryTest";
+        Command.ExecuteNonQuery();
+    }
 }
