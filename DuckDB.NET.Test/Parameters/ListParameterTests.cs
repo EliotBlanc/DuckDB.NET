@@ -32,6 +32,16 @@ public class ListParameterTests(DuckDBDatabaseFixture db) : DuckDBTestBase(db)
         var nestedListValue = reader.GetFieldValue<List<List<T>>>(2);
         nestedListValue.Should().BeEquivalentTo(nestedList);
 
+        Command.CommandText = "select unnest($list);";
+
+        using var unnestReader = Command.ExecuteReader();
+        for (var i = 0; i < list.Count; i++)
+        {
+            unnestReader.Read();
+            var val = unnestReader.GetFieldValue<T>(0);
+            val.Should().BeEquivalentTo(list[i]);
+        }
+
         Command.CommandText = "DROP TABLE ParameterListTest";
         Command.ExecuteNonQuery();
     }
@@ -188,5 +198,51 @@ public class ListParameterTests(DuckDBDatabaseFixture db) : DuckDBTestBase(db)
             var dateTime = faker.Date.Past();
             return new TimeOnly(dateTime.TimeOfDay.Ticks - dateTime.TimeOfDay.Ticks % 10);
         });
+    }
+
+    [Fact]
+    public void CanUnnestLists()
+    {
+        var names = new List<string>
+        {
+            "Bob",
+            "Sam",
+        };
+
+        var nums = new List<int>
+        {
+            1,
+            6
+        };
+
+        var guids = new List<Guid>
+        {
+            new Guid("760d8ef3-024e-4239-a71a-84832618e8c4"),
+            new Guid("93c1582a-9646-4c82-84ec-1b4cdab5fe2a"),
+        };
+
+        Command.CommandText = "SELECT unnest($names), unnest($nums), unnest($guids);";
+        Command.Parameters.Add(new DuckDBParameter("names", names));
+        Command.Parameters.Add(new DuckDBParameter("nums", nums));
+        Command.Parameters.Add(new DuckDBParameter("guids", guids));
+
+        using var reader = Command.ExecuteReader();
+
+        for (var i = 0; i < names.Count; i++)
+        {
+            var name = names[i];
+            var num = nums[i];
+            var guid = guids[i];
+
+            reader.Read();
+
+            var actualName = reader.GetFieldValue<string>(0);
+            var actualNum = reader.GetFieldValue<int>(1);
+            var actualGuid = reader.GetFieldValue<Guid>(2);
+
+            actualName.Should().Be(name);
+            actualNum.Should().Be(num);
+            actualGuid.Should().Be(guid);
+        }
     }
 }

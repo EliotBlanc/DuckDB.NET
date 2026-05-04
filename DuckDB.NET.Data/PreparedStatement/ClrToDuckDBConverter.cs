@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace DuckDB.NET.Data.PreparedStatement;
 
 internal static class ClrToDuckDBConverter
@@ -94,7 +96,7 @@ internal static class ClrToDuckDBConverter
             (DuckDBType.List, ICollection value) => CreateCollectionValue(logicalType, value, true, dbType),
             (DuckDBType.Array, ICollection value) => CreateCollectionValue(logicalType, value, false, dbType),
             _ when ValueCreators.TryGetValue(dbType, out var converter) => converter(item),
-            _ => NativeMethods.Value.DuckDBCreateVarchar(item.ToString())
+            _ => CreateValueWhenPreparedTypeIsUnknown(duckDBType, item, dbType)
         };
 
         bool TryConvertTo<T>(out T result) where T : struct
@@ -116,6 +118,147 @@ internal static class ClrToDuckDBConverter
                 return false;
             }
         }
+    }
+
+    private static DuckDBValue CreateValueWhenPreparedTypeIsUnknown(DuckDBType duckDBType, object item, DbType dbType)
+    {
+        if (duckDBType == DuckDBType.Invalid)
+        {
+            if (item is ICollection collection)
+            {
+                return CreateInferredCollectionValue(collection, dbType);
+            }
+        }
+
+        return NativeMethods.Value.DuckDBCreateVarchar(item.ToString());
+    }
+
+    private static DuckDBValue CreateInferredCollectionValue(ICollection collection, DbType dbType)
+    {
+        var childDuckDBType = InferCollectionChildType(collection, dbType);
+
+        using var childLogicalType =
+            NativeMethods.LogicalType.DuckDBCreateLogicalType(childDuckDBType);
+
+        using var listLogicalType =
+            NativeMethods.LogicalType.DuckDBCreateListType(childLogicalType);
+
+        var values = collection
+            .Cast<object?>()
+            .Select(value =>
+            {
+                if (value.IsNull())
+                {
+                    return NativeMethods.Value.DuckDBCreateNullValue();
+                }
+
+                return value.ToDuckDBValue(childLogicalType, childDuckDBType, dbType);
+            })
+            .ToArray();
+
+        return NativeMethods.Value.DuckDBCreateListValue(
+            childLogicalType,
+            values,
+            values.Length);
+    }
+
+    private static DuckDBType InferCollectionChildType(ICollection collection, DbType dbType)
+    {
+        if (dbType != DbType.Object)
+        {
+            var typeFromDbType = TryInferDuckDBTypeFromDbType(dbType);
+            if (typeFromDbType.HasValue)
+            {
+                return typeFromDbType.Value;
+            }
+        }
+
+        var firstNonNullValue = collection
+            .Cast<object?>()
+            .FirstOrDefault(value => !value.IsNull());
+
+        if (firstNonNullValue is null)
+        {
+            // Pick VARCHAR for empty/all-null lists unless the caller supplied DbType.
+            // Without a non-null value, there is no reliable CLR element type.
+            return DuckDBType.Varchar;
+        }
+
+        return firstNonNullValue switch
+        {
+            bool => DuckDBType.Boolean,
+
+            sbyte => DuckDBType.TinyInt,
+            short => DuckDBType.SmallInt,
+            int => DuckDBType.Integer,
+            long => DuckDBType.BigInt,
+
+            byte => DuckDBType.UnsignedTinyInt,
+            ushort => DuckDBType.UnsignedSmallInt,
+            uint => DuckDBType.UnsignedInteger,
+            ulong => DuckDBType.UnsignedBigInt,
+
+            float => DuckDBType.Float,
+            double => DuckDBType.Double,
+            decimal => DuckDBType.Decimal,
+
+            string => DuckDBType.Varchar,
+            Guid => DuckDBType.Uuid,
+
+            DateTime => DuckDBType.Timestamp,
+            DateTimeOffset => DuckDBType.TimestampTz,
+            TimeSpan => DuckDBType.Interval,
+
+            byte[] => DuckDBType.Blob,
+
+            DuckDBDateOnly => DuckDBType.Date,
+            DuckDBTimeOnly => DuckDBType.Time,
+
+#if NET6_0_OR_GREATER
+            DateOnly => DuckDBType.Date,
+            TimeOnly => DuckDBType.Time,
+#endif
+
+            BigInteger => DuckDBType.HugeInt,
+
+            _ => DuckDBType.Varchar
+        };
+    }
+
+    private static DuckDBType? TryInferDuckDBTypeFromDbType(DbType dbType)
+    {
+        return dbType switch
+        {
+            DbType.Boolean => DuckDBType.Boolean,
+
+            DbType.SByte => DuckDBType.TinyInt,
+            DbType.Int16 => DuckDBType.SmallInt,
+            DbType.Int32 => DuckDBType.Integer,
+            DbType.Int64 => DuckDBType.BigInt,
+
+            DbType.Byte => DuckDBType.UnsignedTinyInt,
+            DbType.UInt16 => DuckDBType.UnsignedSmallInt,
+            DbType.UInt32 => DuckDBType.UnsignedInteger,
+            DbType.UInt64 => DuckDBType.UnsignedBigInt,
+
+            DbType.Single => DuckDBType.Float,
+            DbType.Double => DuckDBType.Double,
+            DbType.Decimal or DbType.Currency => DuckDBType.Decimal,
+
+            DbType.String or DbType.AnsiString or DbType.StringFixedLength or DbType.AnsiStringFixedLength =>
+                DuckDBType.Varchar,
+
+            DbType.Guid => DuckDBType.Uuid,
+
+            DbType.Date => DuckDBType.Date,
+            DbType.Time => DuckDBType.Time,
+            DbType.DateTime or DbType.DateTime2 => DuckDBType.Timestamp,
+            DbType.DateTimeOffset => DuckDBType.TimestampTz,
+
+            DbType.Binary => DuckDBType.Blob,
+
+            _ => null
+        };
     }
 
     private static DuckDBValue CreateCollectionValue(DuckDBLogicalType logicalType, ICollection collection, bool isList, DbType dbType)
