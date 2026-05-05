@@ -156,10 +156,21 @@ internal static class ClrToDuckDBConverter
             })
             .ToArray();
 
-        return NativeMethods.Value.DuckDBCreateListValue(
-            childLogicalType,
-            values,
-            values.Length);
+        try
+        {
+            return NativeMethods.Value.DuckDBCreateListValue(
+                childLogicalType,
+                values,
+                values.Length);
+        }
+        finally
+        {
+            for (var i = 0; i < values.Length; i++)
+            {
+                DuckDBValue val = values[i];
+                val.Dispose();
+            }
+        }
     }
 
     private static DuckDBType InferCollectionChildType(ICollection collection, DbType dbType)

@@ -236,7 +236,14 @@ public partial class NativeMethods
 
         public static DuckDBValue DuckDBCreateListValue(DuckDBLogicalType logicalType, DuckDBValue[] values, int count)
         {
-            var duckDBValue = DuckDBCreateListValue(logicalType, values.Select(item => item.DangerousGetHandle()).ToArray(), count);
+            var itemPointers = values.Select(item => item.DangerousGetHandle()).ToArray();
+
+            var duckDBValue = DuckDBCreateListValue(logicalType, itemPointers, count);
+
+            if (duckDBValue.IsInvalid)
+            {
+                throw new InvalidOperationException("duckdb_create_list_value returned null.");
+            }
 
             duckDBValue.SetChildValues(values);
 

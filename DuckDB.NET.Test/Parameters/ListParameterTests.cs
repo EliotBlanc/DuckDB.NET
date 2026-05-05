@@ -201,6 +201,35 @@ public class ListParameterTests(DuckDBDatabaseFixture db) : DuckDBTestBase(db)
     }
 
     [Fact]
+    public void CanUnnestListWithNulls()
+    {
+        var decimals = new List<decimal?>
+        {
+            12m,
+            15m,
+            null,
+            172.5m,
+        };
+
+
+        Command.CommandText = "SELECT unnest($vals);";
+        Command.Parameters.Add(new DuckDBParameter(decimals));
+
+        using var reader = Command.ExecuteReader();
+
+        for (var i = 0; i < decimals.Count; i++)
+        {
+            var dec = decimals[i];
+
+            reader.Read();
+
+            var actual = reader.GetFieldValue<decimal?>(0);
+
+            actual.Should().Be(dec);
+        }
+    }
+
+    [Fact]
     public void CanUnnestLists()
     {
         var names = new List<string>
