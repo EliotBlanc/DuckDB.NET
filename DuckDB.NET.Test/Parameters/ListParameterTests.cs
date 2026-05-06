@@ -211,9 +211,8 @@ public class ListParameterTests(DuckDBDatabaseFixture db) : DuckDBTestBase(db)
             172.5m,
         };
 
-
         Command.CommandText = "SELECT unnest($vals);";
-        Command.Parameters.Add(new DuckDBParameter(decimals));
+        Command.Parameters.Add(new DuckDBParameter("vals", decimals));
 
         using var reader = Command.ExecuteReader();
 
@@ -250,10 +249,17 @@ public class ListParameterTests(DuckDBDatabaseFixture db) : DuckDBTestBase(db)
             new Guid("93c1582a-9646-4c82-84ec-1b4cdab5fe2a"),
         };
 
-        Command.CommandText = "SELECT unnest($names), unnest($nums), unnest($guids);";
+        var decimals = new List<decimal>
+        {
+            5,
+            7
+        };
+
+        Command.CommandText = "SELECT unnest($names), unnest($nums), unnest($guids), unnest($decimals);";
         Command.Parameters.Add(new DuckDBParameter("names", names));
         Command.Parameters.Add(new DuckDBParameter("nums", nums));
         Command.Parameters.Add(new DuckDBParameter("guids", guids));
+        Command.Parameters.Add(new DuckDBParameter("decimals", decimals));
 
         using var reader = Command.ExecuteReader();
 

@@ -137,39 +137,36 @@ internal static class ClrToDuckDBConverter
     {
         var childDuckDBType = InferCollectionChildType(collection, dbType);
 
-        using var childLogicalType =
-            NativeMethods.LogicalType.DuckDBCreateLogicalType(childDuckDBType);
-
-        using var listLogicalType =
-            NativeMethods.LogicalType.DuckDBCreateListType(childLogicalType);
-
-        var values = collection
-            .Cast<object?>()
-            .Select(value =>
-            {
-                if (value.IsNull())
-                {
-                    return NativeMethods.Value.DuckDBCreateNullValue();
-                }
-
-                return value.ToDuckDBValue(childLogicalType, childDuckDBType, dbType);
-            })
-            .ToArray();
+        DuckDBLogicalType childType;
+        if (childDuckDBType == DuckDBType.Decimal)
+        {
+            byte precision = 38;
+            byte scale = 18;
+            childType = NativeMethods.LogicalType.DuckDBCreateDecimalType(precision, scale);
+        }
+        else
+        {
+            childType = NativeMethods.LogicalType.DuckDBCreateLogicalType(childDuckDBType);
+        }
 
         try
         {
-            return NativeMethods.Value.DuckDBCreateListValue(
-                childLogicalType,
-                values,
-                values.Length);
+            using var listLogicalType =
+                NativeMethods.LogicalType.DuckDBCreateListType(childType);
+
+            var values = new DuckDBValue[collection.Count];
+            var index = 0;
+            foreach (var item in collection)
+            {
+                var duckDBValue = item.ToDuckDBValue(childType, childDuckDBType, dbType);
+                values[index++] = duckDBValue;
+            }
+
+            return NativeMethods.Value.DuckDBCreateListValue(childType, values, values.Length);
         }
         finally
         {
-            for (var i = 0; i < values.Length; i++)
-            {
-                DuckDBValue val = values[i];
-                val.Dispose();
-            }
+            childType.Dispose();
         }
     }
 
@@ -194,6 +191,8 @@ internal static class ClrToDuckDBConverter
             // Without a non-null value, there is no reliable CLR element type.
             return DuckDBType.Varchar;
         }
+
+
 
         return firstNonNullValue switch
         {
