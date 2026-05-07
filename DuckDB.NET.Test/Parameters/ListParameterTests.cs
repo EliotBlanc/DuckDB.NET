@@ -38,7 +38,7 @@ public class ListParameterTests(DuckDBDatabaseFixture db) : DuckDBTestBase(db)
         for (var i = 0; i < list.Count; i++)
         {
             unnestReader.Read();
-            var val = unnestReader.GetFieldValue<T>(0);
+            object val = unnestReader.IsDBNull(0) ? null : unnestReader.GetFieldValue<T>(0);
             val.Should().BeEquivalentTo(list[i]);
         }
 
