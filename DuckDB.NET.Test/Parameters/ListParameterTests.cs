@@ -37,9 +37,20 @@ public class ListParameterTests(DuckDBDatabaseFixture db) : DuckDBTestBase(db)
         using var unnestReader = Command.ExecuteReader();
         for (var i = 0; i < list.Count; i++)
         {
+            var compareTo = list[i];
+
             unnestReader.Read();
             object val = unnestReader.IsDBNull(0) ? null : unnestReader.GetFieldValue<T>(0);
-            val.Should().BeEquivalentTo(list[i]);
+
+            if (val is DateTimeOffset dto && compareTo is DateTimeOffset exp)
+            {
+                dto.ToUniversalTime().Should().Be(exp.ToUniversalTime());
+            }
+            else
+            {
+                val.Should().BeEquivalentTo(compareTo);
+            }
+
         }
 
         Command.CommandText = "DROP TABLE ParameterListTest";
